@@ -595,6 +595,11 @@ int wasm_font_is_italic(fz_font *font)
 	INTEGER(fz_font_is_italic, font)
 }
 
+EXPORT
+fz_buffer * wasm_get_font_buffer(fz_font *font) {
+	return font->buffer;
+}
+
 // --- Image ---
 
 EXPORT
@@ -2919,6 +2924,39 @@ js_dev_end_layer(fz_context *ctx, fz_device *dev)
 	EM_ASM({ globalThis.$libmupdf_device.end_layer($0) },
 		((js_device*)dev)->id
 	);
+}
+
+enum DEVICE_SKIP {
+	DEVICE_SKIP_NONE = 0,
+	DEVICE_SKIP_TEXT = 1,
+	DEVICE_SKIP_IMAGE = 2,
+	DEVICE_SKIP_VECTOR = 4
+};
+
+static void noop(...) {};
+
+EXPORT
+fz_device *wasm_make_skipable_device(fz_device *base, int flags)
+{
+	if( flags == 0 ) {
+		return base;
+	}
+
+	if( flags & DEVICE_SKIP_TEXT ) {
+		base->super.fill_text = (void *)noop;
+		base->super.stroke_text = (void *)noop;
+	}
+
+	if ( flags & DEVICE_SKIP_IMAGE) {
+		base->super.fill_image = (void *)noop;
+	}
+
+	if ( flags & DEVICE_SKIP_VECTOR ) {		
+		base->super.fill_path = (void *)noop;
+		base->super.stroke_path = (void *)noop;
+	}
+
+	return base;
 }
 
 EXPORT
