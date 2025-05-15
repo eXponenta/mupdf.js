@@ -858,6 +858,20 @@ export class Font extends Userdata<"fz_font"> {
 	isItalic() {
 		return !!libmupdf._wasm_font_is_italic(this.pointer)
 	}
+
+	isEmbed() {
+		return !!libmupdf._wasm_font_get_embed(this.pointer);
+	}
+
+	getBuffer() {
+		if( !this.isEmbed() ) return null;
+
+		const buff = libmupdf._wasm_font_get_buffer(this.pointer);
+		
+		if( !buff) return null;
+
+		return fromBuffer(buff);
+	}
 }
 
 export class Image extends Userdata<"fz_image"> {

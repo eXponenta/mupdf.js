@@ -144,6 +144,8 @@ interface Libmupdf {
 	_wasm_link_dest_get_w(p: Pointer<"fz_link_dest">): number,
 	_wasm_link_dest_get_h(p: Pointer<"fz_link_dest">): number,
 	_wasm_link_dest_get_zoom(p: Pointer<"fz_link_dest">): number,
+	_wasm_font_get_embed(p: Pointer<"fz_font">): number,
+	_wasm_font_get_buffer(p: Pointer<"fz_font">): Pointer<"fz_buffer">,
 	_wasm_pdf_embedded_file_params_get_filename(p: Pointer<"pdf_embedded_file_params">): Pointer<"char">,
 	_wasm_pdf_embedded_file_params_get_mimetype(p: Pointer<"pdf_embedded_file_params">): Pointer<"char">,
 	_wasm_pdf_embedded_file_params_get_size(p: Pointer<"pdf_embedded_file_params">): number,
@@ -532,5 +534,6 @@ interface Libmupdf {
 	_wasm_new_stream(id: number): Pointer<"fz_stream">,
 	_wasm_walk_path(path: Pointer<"fz_path">, walk_id: number): void,
 	_wasm_walk_text(text: Pointer<"fz_text">, walk_id: number): void,
+	_wasm_make_skipable_device(base: Pointer<"fz_device">, flags: number): Pointer<"fz_device">,
 	_wasm_new_js_device(id: number): Pointer<"fz_device">,
 }

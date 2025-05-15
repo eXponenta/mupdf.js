@@ -467,6 +467,9 @@ GET(link_dest, float, w)
 GET(link_dest, float, h)
 GET(link_dest, float, zoom)
 
+GETU(font, int, embed, flags.embed)
+GET(font, fz_buffer*, buffer)
+
 PDF_GET(embedded_file_params, const char*, filename)
 PDF_GET(embedded_file_params, const char*, mimetype)
 PDF_GET(embedded_file_params, int, size)
@@ -593,11 +596,6 @@ EXPORT
 int wasm_font_is_italic(fz_font *font)
 {
 	INTEGER(fz_font_is_italic, font)
-}
-
-EXPORT
-fz_buffer * wasm_get_font_buffer(fz_font *font) {
-	return font->buffer;
 }
 
 // --- Image ---
@@ -2933,7 +2931,7 @@ enum DEVICE_SKIP {
 	DEVICE_SKIP_VECTOR = 4
 };
 
-static void noop(...) {};
+#define noop(x) __noop(x)
 
 EXPORT
 fz_device *wasm_make_skipable_device(fz_device *base, int flags)
@@ -2943,17 +2941,17 @@ fz_device *wasm_make_skipable_device(fz_device *base, int flags)
 	}
 
 	if( flags & DEVICE_SKIP_TEXT ) {
-		base->super.fill_text = (void *)noop;
-		base->super.stroke_text = (void *)noop;
+		base->fill_text = NULL;
+		base->stroke_text = NULL;
 	}
 
 	if ( flags & DEVICE_SKIP_IMAGE) {
-		base->super.fill_image = (void *)noop;
+		base->fill_image = NULL;
 	}
 
 	if ( flags & DEVICE_SKIP_VECTOR ) {		
-		base->super.fill_path = (void *)noop;
-		base->super.stroke_path = (void *)noop;
+		base->fill_path = NULL;
+		base->stroke_path = NULL;
 	}
 
 	return base;
