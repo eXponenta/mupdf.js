@@ -2862,7 +2862,7 @@ static void
 js_dev_begin_group(fz_context *ctx, fz_device *dev, fz_rect bbox,
 	fz_colorspace *colorspace, int isolated, int knockout, int blendmode, float alpha)
 {
-	EM_ASM({ globalThis.$libmupdf_device.begin_mask($0, $1, $2, $3, $4, $5, $6) },
+	EM_ASM({ globalThis.$libmupdf_device.begin_group($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		&bbox,
 		colorspace,
@@ -2885,7 +2885,7 @@ static int
 js_dev_begin_tile(fz_context *ctx, fz_device *dev, fz_rect area, fz_rect view,
 	float xstep, float ystep, fz_matrix ctm, int id)
 {
-	return EM_ASM_INT({ return globalThis.$libmupdf_device.begin_mask($0, $1, $2, $3, $4, $5, $6) },
+	return EM_ASM_INT({ return globalThis.$libmupdf_device.begin_tile($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		&area,
 		&view,
