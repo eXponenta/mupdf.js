@@ -1528,6 +1528,19 @@ export class Device extends Userdata<"fz_device"> {
 		}
 	}
 
+	static makeSkipableDevice(base: Device, flags: {
+		skipText?: boolean;
+		skipImage?: boolean;
+		skipVector?: boolean;
+	}) {
+		const bits = 0
+			| (+!!flags.skipText) * ( 1 << 0 )
+			| (+!!flags.skipImage) * ( 1 << 1 )
+			| (+!!flags.skipVector) * ( 1 << 2);
+
+		return new Device(libmupdf._wasm_make_skipable_device(base.pointer, bits));
+	}
+
 	fillPath(path: Path, evenOdd: boolean, ctm: Matrix, colorspace: ColorSpace, color: Color, alpha: number) {
 		checkType(path, Path)
 		checkMatrix(ctm)

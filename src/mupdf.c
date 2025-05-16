@@ -2934,9 +2934,9 @@ js_dev_end_layer(fz_context *ctx, fz_device *dev)
 
 enum DEVICE_SKIP {
 	DEVICE_SKIP_NONE = 0,
-	DEVICE_SKIP_TEXT = 1,
-	DEVICE_SKIP_IMAGE = 2,
-	DEVICE_SKIP_VECTOR = 4
+	DEVICE_SKIP_TEXT = 1 << 0,
+	DEVICE_SKIP_IMAGE = 1 << 1,
+	DEVICE_SKIP_VECTOR = 1 << 2,
 };
 
 #define noop(x) __noop(x)
@@ -2948,18 +2948,21 @@ fz_device *wasm_make_skipable_device(fz_device *base, int flags)
 		return base;
 	}
 
+	fz_device *dev = fz_malloc_struct(ctx, fz_device);
+    *dev = *base;
+
 	if( flags & DEVICE_SKIP_TEXT ) {
-		base->fill_text = NULL;
-		base->stroke_text = NULL;
+		dev->fill_text = NULL;
+		dev->stroke_text = NULL;
 	}
 
-	if ( flags & DEVICE_SKIP_IMAGE) {
-		base->fill_image = NULL;
+	if ( flags & DEVICE_SKIP_IMAGE ) {
+		dev->fill_image = NULL;
 	}
 
 	if ( flags & DEVICE_SKIP_VECTOR ) {		
-		base->fill_path = NULL;
-		base->stroke_path = NULL;
+		dev->fill_path = NULL;
+		dev->stroke_path = NULL;
 	}
 
 	return base;
