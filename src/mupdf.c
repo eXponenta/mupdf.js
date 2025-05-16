@@ -2939,33 +2939,258 @@ enum DEVICE_SKIP {
 	DEVICE_SKIP_VECTOR = 1 << 2,
 };
 
-#define noop(x) __noop(x)
+typedef struct skipable_device_s {
+    fz_device super;
+    fz_device *parent;
+    int flags;
+} skipable_device;
+
+#define SKIPABLE_CALL(ctx, sd, method, ...) \
+	if ((sd)->parent->method) \
+		(sd)->parent->method((ctx), (sd)->parent __VA_OPT__(,) __VA_ARGS__); \
+	\
+
+
+static void skipable_fill_path(fz_context *ctx, fz_device *dev, const fz_path *path, int even_odd, fz_matrix ctm,
+	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	if( sd->flags & DEVICE_SKIP_VECTOR ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, fill_path, path, even_odd, ctm, colorspace, color, alpha, color_params )
+}
+
+static void skipable_clip_path(fz_context *ctx, fz_device *dev, const fz_path *path, int even_odd, fz_matrix ctm,
+	fz_rect scissor)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, clip_path, path, even_odd, ctm, scissor)
+}
+
+static void skipable_stroke_path(fz_context *ctx, fz_device *dev, const fz_path *path,
+	const fz_stroke_state *stroke, fz_matrix ctm,
+	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	if( sd->flags & DEVICE_SKIP_VECTOR ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, stroke_path, path, stroke, ctm, colorspace, color, alpha, color_params)
+}
+
+static void skipable_clip_stroke_path(fz_context *ctx, fz_device *dev, const fz_path *path, const fz_stroke_state *stroke,
+	fz_matrix ctm, fz_rect scissor)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, clip_stroke_path, path, stroke, ctm, scissor)
+}
+
+static void skipable_fill_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm,
+	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	if( sd->flags & DEVICE_SKIP_TEXT ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, fill_text,text, ctm, colorspace, color, alpha, color_params)
+}
+
+static void skipable_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, const fz_stroke_state *stroke,
+	fz_matrix ctm, fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	if( sd->flags & DEVICE_SKIP_TEXT ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, stroke_text,text, stroke, ctm, colorspace, color, alpha, color_params)
+}
+
+static void skipable_clip_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm, fz_rect scissor)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, clip_text,text, ctm, scissor)
+}
+
+static void skipable_clip_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, const fz_stroke_state *stroke,
+	fz_matrix ctm, fz_rect scissor)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, clip_stroke_text,text, stroke, ctm, scissor)
+}
+
+static void skipable_ignore_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, ignore_text,text, ctm)
+}
+
+static void skipable_fill_shade(fz_context *ctx, fz_device *dev, fz_shade *shade, fz_matrix ctm, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	if( sd->flags & DEVICE_SKIP_IMAGE ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, fill_shade,shade, ctm, alpha, color_params)
+}
+
+static void skipable_fill_image(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	if( sd->flags & DEVICE_SKIP_IMAGE ) {
+		return;
+	}
+
+	SKIPABLE_CALL(ctx, sd, fill_image,image, ctm, alpha, color_params)
+}
+
+static void skipable_fill_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm,
+	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, fill_image_mask,image, ctm, colorspace, color, alpha, color_params)
+}
+
+static void skipable_clip_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, fz_rect scissor)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, clip_image_mask,image, ctm, scissor)
+}
+
+static void skipable_pop_clip(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, pop_clip)
+}
+
+static void skipable_begin_mask(fz_context *ctx, fz_device *dev, fz_rect bbox, int luminosity,
+	fz_colorspace *colorspace, const float *color, fz_color_params color_params)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, begin_mask,bbox, luminosity, colorspace, color, color_params)
+}
+
+static void skipable_end_mask(fz_context *ctx, fz_device *dev, fz_function *tr)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, end_mask,tr)
+}
+
+static void skipable_begin_group(fz_context *ctx, fz_device *dev, fz_rect bbox,
+	fz_colorspace *colorspace, int isolated, int knockout, int blendmode, float alpha)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, begin_group,bbox, colorspace, isolated, knockout, blendmode, alpha)
+}
+
+static void skipable_end_group(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, end_group)
+}
+
+static int skipable_begin_tile(fz_context *ctx, fz_device *dev, fz_rect area, fz_rect view,
+	float xstep, float ystep, fz_matrix ctm, int id)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, begin_tile,area, view, xstep, ystep, ctm, id)
+	return 0;
+}
+
+static void skipable_end_tile(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, end_tile)
+}
+
+static void skipable_begin_layer(fz_context *ctx, fz_device *dev, const char *name)
+{
+	skipable_device *sd = (skipable_device *)dev;
+
+	SKIPABLE_CALL(ctx, sd, begin_layer, name)
+}
+
+static void skipable_end_layer(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device *)dev;
+	SKIPABLE_CALL(ctx, sd, end_layer)
+}
+
+static void skipable_close(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device*)dev;
+
+	if (sd->parent && sd->parent->close_device)
+	    sd->parent->close_device(ctx, sd->parent);
+}
+
+static void skipable_drop(fz_context *ctx, fz_device *dev)
+{
+	skipable_device *sd = (skipable_device*)dev;
+
+	if (sd->parent && sd->parent->drop_device)
+	    sd->parent->drop_device(ctx, sd->parent);
+}
+
+static void skipable_render_flags(fz_context *ctx, fz_device *dev, int set, int clear)
+{
+	skipable_device *sd = (skipable_device*)dev;
+
+	SKIPABLE_CALL(ctx, sd, render_flags, set, clear)
+}
 
 EXPORT
 fz_device *wasm_make_skipable_device(fz_device *base, int flags)
 {
-	if( flags == 0 ) {
-		return base;
-	}
+	skipable_device *dev = fz_new_derived_device(ctx, skipable_device);
+	dev->parent = base;
+	dev->flags = flags;
 
-	fz_device *dev = fz_malloc_struct(ctx, fz_device);
-    *dev = *base;
+	dev->super.close_device = skipable_close;
+	dev->super.drop_device = skipable_drop;
 
-	if( flags & DEVICE_SKIP_TEXT ) {
-		dev->fill_text = NULL;
-		dev->stroke_text = NULL;
-	}
+	dev->super.fill_path = skipable_fill_path;
+	dev->super.stroke_path = skipable_stroke_path;
+	dev->super.clip_path = skipable_clip_path;
+	dev->super.clip_stroke_path = skipable_clip_stroke_path;
 
-	if ( flags & DEVICE_SKIP_IMAGE ) {
-		dev->fill_image = NULL;
-	}
+	dev->super.fill_text = skipable_fill_text;
+	dev->super.stroke_text = skipable_stroke_text;
+	dev->super.clip_text = skipable_clip_text;
+	dev->super.clip_stroke_text = skipable_clip_stroke_text;
+	dev->super.ignore_text = skipable_ignore_text;
 
-	if ( flags & DEVICE_SKIP_VECTOR ) {		
-		dev->fill_path = NULL;
-		dev->stroke_path = NULL;
-	}
+	dev->super.fill_shade = skipable_fill_shade;
+	dev->super.fill_image = skipable_fill_image;
+	dev->super.fill_image_mask = skipable_fill_image_mask;
+	dev->super.clip_image_mask = skipable_clip_image_mask;
 
-	return dev;
+	dev->super.pop_clip = skipable_pop_clip;
+
+	dev->super.begin_mask = skipable_begin_mask;
+	dev->super.end_mask = skipable_end_mask;
+	dev->super.begin_group = skipable_begin_group;
+	dev->super.end_group = skipable_end_group;
+
+	dev->super.begin_tile = skipable_begin_tile;
+	dev->super.end_tile = skipable_end_tile;
+
+	dev->super.begin_layer = skipable_begin_layer;
+	dev->super.end_layer = skipable_end_layer;
+
+	dev->super.render_flags = skipable_render_flags;
+
+	return (fz_device*)dev;
 }
 
 EXPORT
