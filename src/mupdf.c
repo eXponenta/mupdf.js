@@ -2965,7 +2965,7 @@ fz_device *wasm_make_skipable_device(fz_device *base, int flags)
 		dev->stroke_path = NULL;
 	}
 
-	return base;
+	return dev;
 }
 
 EXPORT
