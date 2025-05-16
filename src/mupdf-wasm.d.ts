@@ -174,6 +174,7 @@ interface Libmupdf {
 	_wasm_font_is_serif(font: Pointer<"fz_font">): number,
 	_wasm_font_is_bold(font: Pointer<"fz_font">): number,
 	_wasm_font_is_italic(font: Pointer<"fz_font">): number,
+	_wasm_font_get_otf_data(font: Pointer<"fz_font">): Pointer<"fz_buffer">,
 	_wasm_new_image_from_pixmap(pix: Pointer<"fz_pixmap">, mask: Pointer<"fz_image">): Pointer<"fz_image">,
 	_wasm_new_image_from_buffer(buf: Pointer<"fz_buffer">): Pointer<"fz_image">,
 	_wasm_get_pixmap_from_image(image: Pointer<"fz_image">): Pointer<"fz_pixmap">,

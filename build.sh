@@ -21,6 +21,7 @@ emcc -o dist/mupdf-wasm.js -I $MUPDF_DIR/include src/mupdf.c \
 	--no-entry \
 	-sABORTING_MALLOC=0 \
 	-sALLOW_MEMORY_GROWTH=1 \
+	-sMAXIMUM_MEMORY=4GB \
 	-sNODEJS_CATCH_EXIT=0 \
 	-sMODULARIZE=1 \
 	-sEXPORT_ES6=1 \

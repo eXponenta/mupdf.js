@@ -34,6 +34,7 @@
 #include "mupdf/ucdn.h"
 #include <string.h>
 #include <math.h>
+#include "font_tool.h"
 
 static fz_context *ctx;
 
@@ -596,6 +597,13 @@ EXPORT
 int wasm_font_is_italic(fz_font *font)
 {
 	INTEGER(fz_font_is_italic, font)
+}
+
+// EXTRACT
+EXPORT
+fz_buffer * wasm_font_get_otf_data(fz_font *font)
+{
+	POINTER(export_font_as_otf, font)
 }
 
 // --- Image ---
