@@ -35,7 +35,7 @@
 #include <string.h>
 #include <math.h>
 #include "font_tool.h"
-
+#include "incremental_draw.h"
 static fz_context *ctx;
 
 static fz_matrix out_matrix;
@@ -378,6 +378,7 @@ PDF_REFS(graft_map)
 #define PDF_GET(S,T,F) EXPORT T wasm_pdf_ ## S ## _get_ ## F(pdf_ ## S *p) { return p->F; }
 #define PDF_SET(S,T,F) EXPORT void wasm_pdf_ ## S ## _set_ ## F(pdf_ ## S *p, T v) { p->F = v; }
 
+GET(display_list, int, len)
 GET(buffer, void*, data)
 GET(buffer, int, len)
 
