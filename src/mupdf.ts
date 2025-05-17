@@ -4325,3 +4325,44 @@ globalThis.$libmupdf_device = {
 	},
 
 }
+
+export class IncrementalRunner extends Userdata<"incremental_runner"> {
+	static override _drop = ( ptr: Pointer<"incremental_runner"> ) => libmupdf._wasm_drop_runner( ptr );
+	constructor(
+		public device: Device,
+		public list: DisplayList
+	) {
+		super(libmupdf._wasm_new_incremental(device.pointer, list.pointer));
+	}
+
+	isDone(): boolean {
+		return !!libmupdf._wasm_get_is_incremental_done(this.pointer)
+	}
+
+	getLength(): number {
+		return libmupdf._wasm_get_runner_max(this.pointer)
+	}
+
+	getPosition(): number {
+		return libmupdf._wasm_get_runner_pointer(this.pointer)
+	}
+
+	get progress(): number {
+		const length = this.getLength()
+		return length === 0 ? 0 : this.getPosition() / length
+	}
+
+	stepClipped(ctm: Matrix, clip: Rect, maxSteps: number): number {
+		checkMatrix(ctm)
+		checkRect(clip)
+
+		return libmupdf._wasm_step_runner_clipped(this.pointer, MATRIX(ctm), RECT(clip), maxSteps)
+	
+	}
+
+	step(ctm: Matrix = [ 1, 0, 0, 1, 0, 0 ], maxSteps: number = Infinity): number {
+		checkMatrix(ctm);
+
+		return libmupdf._wasm_step_runner(this.pointer, MATRIX(ctm), maxSteps)
+	}
+}

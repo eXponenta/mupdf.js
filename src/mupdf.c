@@ -3249,6 +3249,18 @@ int wasm_get_is_incremental_done(incremental_runner *runner)
 }
 
 EXPORT
+int wasm_get_runner_max(incremental_runner *runner)
+{
+	return runner->max;
+}
+
+EXPORT
+int wasm_get_runner_pointer(incremental_runner *runner)
+{
+	return runner->pointer;
+}
+
+EXPORT
 int wasm_step_runner_clipped(incremental_runner *runner, fz_matrix *ctm, fz_rect *clip, int max_steps)
 {
 	INTEGER(step_runner_clipped, runner, *ctm, *clip, max_steps)
@@ -3259,6 +3271,7 @@ int wasm_step_runner(incremental_runner *runner, fz_matrix *ctm, int max_steps)
 {
 	INTEGER(step_runner, runner, *ctm, max_steps)
 }
+
 
 EXPORT
 void wasm_drop_runner(incremental_runner *runner)

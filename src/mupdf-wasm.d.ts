@@ -537,4 +537,11 @@ interface Libmupdf {
 	_wasm_walk_text(text: Pointer<"fz_text">, walk_id: number): void,
 	_wasm_make_skipable_device(base: Pointer<"fz_device">, flags: number): Pointer<"fz_device">,
 	_wasm_new_js_device(id: number): Pointer<"fz_device">,
+	_wasm_new_incremental(device: Pointer<"fz_device">, list: Pointer<"fz_display_list">): Pointer<"incremental_runner">,
+	_wasm_get_is_incremental_done(runner: Pointer<"incremental_runner">): number,
+	_wasm_get_runner_max(runner: Pointer<"incremental_runner">): number,
+	_wasm_get_runner_pointer(runner: Pointer<"incremental_runner">): number,
+	_wasm_step_runner_clipped(runner: Pointer<"incremental_runner">, ctm: Pointer<"fz_matrix">, clip: Pointer<"fz_rect">, max_steps: number): number,
+	_wasm_step_runner(runner: Pointer<"incremental_runner">, ctm: Pointer<"fz_matrix">, max_steps: number): number,
+	_wasm_drop_runner(runner: Pointer<"incremental_runner">): void,
 }
