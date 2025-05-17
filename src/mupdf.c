@@ -378,7 +378,7 @@ PDF_REFS(graft_map)
 #define PDF_GET(S,T,F) EXPORT T wasm_pdf_ ## S ## _get_ ## F(pdf_ ## S *p) { return p->F; }
 #define PDF_SET(S,T,F) EXPORT void wasm_pdf_ ## S ## _set_ ## F(pdf_ ## S *p, T v) { p->F = v; }
 
-GET(display_list, int, len)
+// GET(display_list, int, len)
 GET(buffer, void*, data)
 GET(buffer, int, len)
 
@@ -3234,4 +3234,34 @@ fz_device *wasm_new_js_device(int id)
 	dev->id = id;
 
 	return (fz_device*)dev;
+}
+
+EXPORT
+incremental_runner * wasm_new_incremental(fz_device *device, fz_display_list *list)
+{
+	POINTER(new_incremental, device, list)
+}
+
+EXPORT
+int wasm_get_is_incremental_done(incremental_runner *runner)
+{
+	INTEGER(get_is_incremental_done, runner)
+}
+
+EXPORT
+int wasm_step_runner_clipped(incremental_runner *runner, fz_matrix *ctm, fz_rect *clip, int max_steps)
+{
+	INTEGER(step_runner_clipped, runner, *ctm, *clip, max_steps)
+}
+
+EXPORT
+int wasm_step_runner(incremental_runner *runner, fz_matrix *ctm, int max_steps)
+{
+	INTEGER(step_runner, runner, *ctm, max_steps)
+}
+
+EXPORT
+void wasm_drop_runner(incremental_runner *runner)
+{
+	VOID(drop_runner, runner)
 }

@@ -1,11 +1,128 @@
+/**
+ Reimplementation of 
+ https://github.com/ArtifexSoftware/mupdf/blob/master/source/fitz/list-device.c
+ */
 #ifndef INCREMENTAL_DRAW_H
 #define INCREMENTAL_DRAW_H
 
 #include <mupdf/fitz.h>
 
-#define DEVICE_SKIP_TEXT 1
-#define DEVICE_SKIP_IMAGE 2
-#define DEVICE_SKIP_VECTOR 4
+#define SIZE_IN_NODES(t) \
+	((t + sizeof(fz_display_node) - 1) / sizeof(fz_display_node))
+
+enum {
+	CS_UNCHANGED = 0,
+	CS_GRAY_0    = 1,
+	CS_GRAY_1    = 2,
+	CS_RGB_0     = 3,
+	CS_RGB_1     = 4,
+	CS_CMYK_0    = 5,
+	CS_CMYK_1    = 6,
+	CS_OTHER_0   = 7,
+
+	ALPHA_UNCHANGED = 0,
+	ALPHA_1         = 1,
+	ALPHA_0         = 2,
+	ALPHA_PRESENT   = 3,
+
+	CTM_UNCHANGED = 0,
+	CTM_CHANGE_AD = 1,
+	CTM_CHANGE_BC = 2,
+	CTM_CHANGE_EF = 4,
+
+	INDIRECT_NODE_THRESHOLD = (1<<9)-1
+};
+
+typedef struct
+{
+	unsigned int cmd    : 5;
+	unsigned int size   : 9;
+	unsigned int rect   : 1;
+	unsigned int path   : 1;
+	unsigned int cs     : 3;
+	unsigned int color  : 1;
+	unsigned int alpha  : 2;
+	unsigned int ctm    : 3;
+	unsigned int stroke : 1;
+	unsigned int flags  : 6;
+} fz_display_node;
+
+typedef struct
+{
+	float xstep;
+	float ystep;
+	fz_rect view;
+	int id;
+} fz_list_tile_data;
+
+typedef enum
+{
+	FZ_CMD_FILL_PATH,
+	FZ_CMD_STROKE_PATH,
+	FZ_CMD_CLIP_PATH,
+	FZ_CMD_CLIP_STROKE_PATH,
+	FZ_CMD_FILL_TEXT,
+	FZ_CMD_STROKE_TEXT,
+	FZ_CMD_CLIP_TEXT,
+	FZ_CMD_CLIP_STROKE_TEXT,
+	FZ_CMD_IGNORE_TEXT,
+	FZ_CMD_FILL_SHADE,
+	FZ_CMD_FILL_IMAGE,
+	FZ_CMD_FILL_IMAGE_MASK,
+	FZ_CMD_CLIP_IMAGE_MASK,
+	FZ_CMD_POP_CLIP,
+	FZ_CMD_BEGIN_MASK,
+	FZ_CMD_END_MASK,
+	FZ_CMD_BEGIN_GROUP,
+	FZ_CMD_END_GROUP,
+	FZ_CMD_BEGIN_TILE,
+	FZ_CMD_END_TILE,
+	FZ_CMD_RENDER_FLAGS,
+	FZ_CMD_DEFAULT_COLORSPACES,
+	FZ_CMD_BEGIN_LAYER,
+	FZ_CMD_END_LAYER,
+	FZ_CMD_BEGIN_STRUCTURE,
+	FZ_CMD_END_STRUCTURE,
+	FZ_CMD_BEGIN_METATEXT,
+	FZ_CMD_END_METATEXT
+} fz_display_command;
+
+enum { ISOLATED = 1, KNOCKOUT = 2 };
+enum { OPM = 1, OP = 2, BP = 3, RI = 4};
+
+static void
+fz_unpack_color_params(fz_color_params *color_params, int flags)
+{
+	color_params->ri = (flags >> RI) & 3;
+	color_params->bp = (flags >> BP) & 1;
+	color_params->op = (flags >> OP) & 1;
+	color_params->opm = (flags >> OPM) & 1;
+}
+static void align_node_for_pointer(fz_display_node **node)
+{
+	intptr_t ptr;
+
+	if (FZ_POINTER_ALIGN_MOD <= 4)
+		return;
+
+	ptr = (intptr_t)*node;
+	if (FZ_POINTER_ALIGN_MOD == 8)
+	{
+		if (ptr & 4)
+			(*node) = (fz_display_node *)(ptr+4);
+	}
+	else
+		(*node) = (fz_display_node *)((ptr + FZ_POINTER_ALIGN_MOD - 1) & ~(FZ_POINTER_ALIGN_MOD-1));
+}
+
+typedef struct fz_display_list_t
+{
+	fz_storable storable;
+	fz_display_node *list;
+	fz_rect mediabox;
+	size_t max;
+	size_t len;
+} fz_display_list_valid;
 
 typedef struct incr_state_t {
     /* Current graphics state as unpacked from list */
@@ -28,7 +145,6 @@ typedef struct incremental_runner_t {
     size_t pointer;
 } incremental_runner;
 
-void
 incr_state *create_incr_state(fz_context *ctx)
 {
     incr_state *state = fz_malloc_struct(ctx, incr_state);
@@ -49,7 +165,7 @@ void
 run_display_list_incr( fz_context *ctx, incremental_runner *runner, fz_matrix top_ctm, fz_rect scissor, size_t max_steps )
 {
     // already done
-    if (get_is_incremental_done(runner)) {
+    if (runner->pointer >= runner->max) {
         return;
     }
 
@@ -84,7 +200,7 @@ run_display_list_incr( fz_context *ctx, incremental_runner *runner, fz_matrix to
 	int tile_skip_depth = 0;
 
     fz_device *dev = runner->device;
-    fz_display_list *list = runner->list;
+    fz_display_list_valid *list = (fz_display_list_valid*)runner->list;
 
 	color_params = fz_default_color_params;
 
@@ -500,35 +616,35 @@ visible:
     runner->pointer = progress;
 }
 
-incremental_runner *new_incremental(fz_device *device, fz_display_list *list) {
+incremental_runner *new_incremental(fz_context *ctx, fz_device *device, fz_display_list *list) {
     incremental_runner *runner = fz_malloc(ctx, sizeof(incremental_runner));
     runner->device = device;
     runner->list = list;
     runner->pointer = 0;
-    runner->len = list->max;
+    runner->max =((fz_display_list_valid*)list)->len;
     return runner;
 }
 
 int
-get_is_incremental_done( incremental_runner *runner )
+get_is_incremental_done( fz_context *ctx, incremental_runner *runner )
 {
     return runner->pointer >= runner->max;
 }
 
-int step_runner_clipped(incremental_runner *runner, fz_matrix *ctm, fz_rect *clip, int max_steps)
+int step_runner_clipped(fz_context *ctx, incremental_runner *runner, fz_matrix ctm, fz_rect clip, int max_steps)
 {
     if (!runner || !runner->device || !runner->list) {
         return -1;
     }
 
-    run_display_list_clip(runner, *ctm, *clip, max_steps);
+    run_display_list_incr(ctx, runner, ctm, clip, max_steps);
     return runner->pointer;
 
 }
 
-int step_runner(incremental_runner *runner, fz_matrix *ctm, int max_steps)
+int step_runner(fz_context *ctx, incremental_runner *runner, fz_matrix ctm, int max_steps)
 {
-    return step_runner_clipped(runner, ctm, fz_infinite_rect, max_steps)
+    return step_runner_clipped(ctx, runner, ctm, fz_infinite_rect, max_steps);
 }
 
 void drop_runner(fz_context *ctx, incremental_runner *runner)
@@ -543,7 +659,7 @@ void drop_runner(fz_context *ctx, incremental_runner *runner)
         runner->pointer = 0;
         runner->max = 0;
         runner->list = NULL;
-        runner->dev = NULL;
+        runner->device = NULL;
         runner->state = NULL;
     }
 }
