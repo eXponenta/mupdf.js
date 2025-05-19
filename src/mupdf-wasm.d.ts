@@ -198,7 +198,7 @@ interface Libmupdf {
 	_wasm_bound_shade(shade: Pointer<"fz_shade">): Pointer<"fz_rect">,
 	_wasm_new_display_list(mediabox: Pointer<"fz_rect">): Pointer<"fz_display_list">,
 	_wasm_bound_display_list(list: Pointer<"fz_display_list">): Pointer<"fz_rect">,
-	_wasm_run_display_list(display_list: Pointer<"fz_display_list">, dev: Pointer<"fz_device">, ctm: Pointer<"fz_matrix">): void,
+	_wasm_run_display_list(display_list: Pointer<"fz_display_list">, dev: Pointer<"fz_device">, ctm: Pointer<"fz_matrix">, rect: Pointer<"fz_rect">): void,
 	_wasm_new_pixmap_from_display_list(display_list: Pointer<"fz_display_list">, ctm: Pointer<"fz_matrix">, colorspace: Pointer<"fz_colorspace">, alpha: boolean): Pointer<"fz_pixmap">,
 	_wasm_new_stext_page_from_display_list(display_list: Pointer<"fz_display_list">, option_string: Pointer<"char">): Pointer<"fz_stext_page">,
 	_wasm_search_display_list(display_list: Pointer<"fz_display_list">, needle: Pointer<"char">, marks: Pointer<"int">, hits: Pointer<"fz_quad">, hit_max: number): number,

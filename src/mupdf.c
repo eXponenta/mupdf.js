@@ -754,9 +754,9 @@ fz_rect * wasm_bound_display_list(fz_display_list *list)
 }
 
 EXPORT
-void wasm_run_display_list(fz_display_list *display_list, fz_device *dev, fz_matrix *ctm)
+void wasm_run_display_list(fz_display_list *display_list, fz_device *dev, fz_matrix *ctm, fz_rect *rect)
 {
-	VOID(fz_run_display_list, display_list, dev, *ctm, fz_infinite_rect, NULL)
+	VOID(fz_run_display_list, display_list, dev, *ctm, rect == NULL ? fz_infinite_rect: *rect, NULL)
 }
 
 EXPORT

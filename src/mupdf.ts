@@ -1179,10 +1179,12 @@ export class DisplayList extends Userdata<"fz_display_list"> {
 		return new StructuredText(libmupdf._wasm_new_stext_page_from_display_list(this.pointer, STRING(options)))
 	}
 
-	run(device: Device, matrix: Matrix) {
+	run(device: Device, matrix: Matrix, rect?: Rect) {
 		checkType(device, Device)
 		checkMatrix(matrix)
-		libmupdf._wasm_run_display_list(this.pointer, device.pointer, MATRIX(matrix))
+		rect && checkRect(rect);
+
+		libmupdf._wasm_run_display_list(this.pointer, device.pointer, MATRIX(matrix), (rect ? RECT(rect) : 0) as any)
 	}
 
 	search(needle: string, max_hits = 500) {
