@@ -3133,14 +3133,16 @@ static void skipable_close(fz_context *ctx, fz_device *dev)
 
 	if (sd->parent && sd->parent->close_device)
 	    sd->parent->close_device(ctx, sd->parent);
+
+	sd->parent = NULL;
 }
 
 static void skipable_drop(fz_context *ctx, fz_device *dev)
 {
 	skipable_device *sd = (skipable_device*)dev;
 
-	if (sd->parent && sd->parent->drop_device)
-	    sd->parent->drop_device(ctx, sd->parent);
+	// if (sd->parent && sd->parent->drop_device)
+	//    sd->parent->drop_device(ctx, sd->parent);
 }
 
 static void skipable_render_flags(fz_context *ctx, fz_device *dev, int set, int clear)
