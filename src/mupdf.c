@@ -524,6 +524,12 @@ char * wasm_string_from_buffer(fz_buffer *buf)
 	POINTER(fz_string_from_buffer, buf)
 }
 
+EXPORT
+void wasm_set_graphics_min_line_width(float min_line_width)
+{
+	VOID(fz_set_graphics_min_line_width, min_line_width)
+}
+
 // --- ColorSpace ---
 
 EXPORT fz_colorspace * wasm_device_gray(void) { return fz_device_gray(ctx); }

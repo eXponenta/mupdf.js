@@ -226,6 +226,13 @@ export function installLoadFontFunction(f: (name: string, script: string) => Buf
 	$libmupdf_load_font_file_js = f
 }
 
+export function setGraphicsMinLineWidth(min: number) {
+	min = isFinite(min) ? min : 0;
+	min = min < 0 ? 0 : min;
+
+	libmupdf._wasm_set_graphics_min_line_width(min);
+}
+
 /* -------------------------------------------------------------------------- */
 
 // To pass Rect and Matrix as pointer arguments

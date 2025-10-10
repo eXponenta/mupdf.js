@@ -159,6 +159,7 @@ interface Libmupdf {
 	_wasm_append_buffer(buf: Pointer<"fz_buffer">, src: Pointer<"fz_buffer">): void,
 	_wasm_slice_buffer(buf: Pointer<"fz_buffer">, start: number, end: number): Pointer<"fz_buffer">,
 	_wasm_string_from_buffer(buf: Pointer<"fz_buffer">): Pointer<"char">,
+	_wasm_set_graphics_min_line_width(min_line_width: number): void,
 	_wasm_device_gray(): Pointer<"fz_colorspace">,
 	_wasm_device_rgb(): Pointer<"fz_colorspace">,
 	_wasm_device_bgr(): Pointer<"fz_colorspace">,
