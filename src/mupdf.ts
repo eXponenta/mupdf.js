@@ -874,7 +874,7 @@ export class Font extends Userdata<"fz_font"> {
 		if( !this.isEmbed() ) return null;
 
 		const buff = libmupdf._wasm_font_get_buffer(this.pointer);
-		
+
 		if( !buff) return null;
 
 		return fromBuffer(buff);
@@ -1535,19 +1535,6 @@ export class Device extends Userdata<"fz_device"> {
 			$libmupdf_device_table.set(id, pointer_or_callbacks)
 			super(libmupdf._wasm_new_js_device(id))
 		}
-	}
-
-	static makeSkipableDevice(base: Device, flags: {
-		skipText?: boolean;
-		skipImage?: boolean;
-		skipVector?: boolean;
-	}) {
-		const bits = 0
-			| (+!!flags.skipText) * ( 1 << 0 )
-			| (+!!flags.skipImage) * ( 1 << 1 )
-			| (+!!flags.skipVector) * ( 1 << 2);
-
-		return new Device(libmupdf._wasm_make_skipable_device(base.pointer, bits));
 	}
 
 	fillPath(path: Path, evenOdd: boolean, ctm: Matrix, colorspace: ColorSpace, color: Color, alpha: number) {
@@ -4333,45 +4320,4 @@ globalThis.$libmupdf_device = {
 		$libmupdf_device_table.get(id)?.endLayer?.()
 	},
 
-}
-
-export class IncrementalRunner extends Userdata<"incremental_runner"> {
-	static override _drop = ( ptr: Pointer<"incremental_runner"> ) => libmupdf._wasm_drop_runner( ptr );
-	constructor(
-		public device: Device,
-		public list: DisplayList
-	) {
-		super(libmupdf._wasm_new_incremental(device.pointer, list.pointer));
-	}
-
-	isDone(): boolean {
-		return !!libmupdf._wasm_get_is_incremental_done(this.pointer)
-	}
-
-	getLength(): number {
-		return libmupdf._wasm_get_runner_max(this.pointer)
-	}
-
-	getPosition(): number {
-		return libmupdf._wasm_get_runner_pointer(this.pointer)
-	}
-
-	get progress(): number {
-		const length = this.getLength()
-		return length === 0 ? 0 : this.getPosition() / length
-	}
-
-	stepClipped(ctm: Matrix, clip: Rect, maxSteps: number): number {
-		checkMatrix(ctm)
-		checkRect(clip)
-
-		return libmupdf._wasm_step_runner_clipped(this.pointer, MATRIX(ctm), RECT(clip), maxSteps)
-	
-	}
-
-	step(ctm: Matrix = [ 1, 0, 0, 1, 0, 0 ], maxSteps: number = Infinity): number {
-		checkMatrix(ctm);
-
-		return libmupdf._wasm_step_runner(this.pointer, MATRIX(ctm), maxSteps)
-	}
 }

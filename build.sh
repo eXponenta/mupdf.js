@@ -18,7 +18,7 @@ echo
 echo BUILDING MUPDF WASM
 mkdir -p dist
 emcc -o dist/mupdf-wasm.js -I $MUPDF_DIR/include \
-   -Os -g2 \
+   -O3\
    -mno-nontrapping-fptoint \
    -fwasm-exceptions \
    --no-entry \
@@ -38,6 +38,6 @@ emcc -o dist/mupdf-wasm.js -I $MUPDF_DIR/include \
     $MUPDF_DIR/build/wasm/$BUILD/libmupdf-third.a
 echo
 
-# echo BUILDING TYPESCRIPT
-# cat src/mupdf.c | sed '/#include/d' | emcc -E - | node src/gen-wasm-type.js > src/mupdf-wasm.d.ts
-# npx tsc -p .
+echo BUILDING TYPESCRIPT
+cat src/mupdf.c | sed '/#include/d' | emcc -E - | node src/gen-wasm-type.js > src/mupdf-wasm.d.ts
+npx tsc -p .
