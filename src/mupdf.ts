@@ -233,6 +233,37 @@ export function setGraphicsMinLineWidth(min: number) {
 	libmupdf._wasm_set_graphics_min_line_width(min);
 }
 
+export function getGraphicsMinLineWidth() {
+	libmupdf._wasm_get_graphics_min_line_width();
+}
+
+export function setGraphicsAALevel(level: number = 8) {
+	level = Number.isFinite(level) ? level : 8;
+	level = level > 8 ? 8 : level;
+	level = level < 0 ? 0 : level;
+	libmupdf._wasm_set_graphics_aa_level(level);
+}
+
+export function getGraphicsAALevel() {
+	libmupdf._wasm_get_graphics_aa_level();
+}
+
+export function setTextAALevel(level: number = 8) {
+	level = Number.isFinite(level) ? level : 8;
+	level = level > 8 ? 8 : level;
+	level = level < 0 ? 0 : level;
+	libmupdf._wasm_set_text_aa_level(level);
+}
+
+export function getTextAALevel() {
+	libmupdf._wasm_get_text_aa_level();
+}
+
+export function setAALevel(level: number = 8) {
+	setGraphicsAALevel(level);
+	setTextAALevel(level);
+}
+
 /* -------------------------------------------------------------------------- */
 
 // To pass Rect and Matrix as pointer arguments

@@ -528,6 +528,36 @@ void wasm_set_graphics_min_line_width(float min_line_width)
 	VOID(fz_set_graphics_min_line_width, min_line_width)
 }
 
+EXPORT
+int wasm_get_graphics_min_line_width(void)
+{
+	INTEGER(fz_graphics_min_line_width)
+}
+
+EXPORT
+void wasm_set_graphics_aa_level(int bits)
+{
+	VOID(fz_set_graphics_aa_level, bits)
+}
+
+EXPORT
+int wasm_get_graphics_aa_level(void)
+{
+	INTEGER(fz_graphics_aa_level)
+}
+
+EXPORT
+void wasm_set_text_aa_level(int bits)
+{
+	VOID(fz_set_text_aa_level, bits)
+}
+
+EXPORT
+int wasm_get_text_aa_level(void)
+{
+	INTEGER(fz_text_aa_level)
+}
+
 // --- ColorSpace ---
 
 EXPORT fz_colorspace * wasm_device_gray(void) { return fz_device_gray(ctx); }
