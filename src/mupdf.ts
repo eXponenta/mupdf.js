@@ -245,7 +245,7 @@ export function setGraphicsAALevel(level: number = 8) {
 }
 
 export function getGraphicsAALevel() {
-	libmupdf._wasm_get_graphics_aa_level();
+	return libmupdf._wasm_get_graphics_aa_level();
 }
 
 export function setTextAALevel(level: number = 8) {
@@ -256,7 +256,7 @@ export function setTextAALevel(level: number = 8) {
 }
 
 export function getTextAALevel() {
-	libmupdf._wasm_get_text_aa_level();
+	return libmupdf._wasm_get_text_aa_level();
 }
 
 export function setAALevel(level: number = 8) {
