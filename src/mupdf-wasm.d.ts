@@ -22,6 +22,8 @@ interface Libmupdf {
 	_wasm_enable_icc(): void,
 	_wasm_disable_icc(): void,
 	_wasm_set_user_css(text: Pointer<"char">): void,
+	_wasm_char_unstable_resolve_strategy(enabled: boolean): void,
+	_wasm_drop_cache(): void,
 	_wasm_keep_buffer(p: Pointer<"fz_buffer">): Pointer<"fz_buffer">,
 	_wasm_drop_buffer(p: Pointer<"fz_buffer">): void,
 	_wasm_keep_stream(p: Pointer<"fz_stream">): Pointer<"fz_stream">,

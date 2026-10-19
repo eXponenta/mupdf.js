@@ -35,6 +35,7 @@
 #include <string.h>
 #include <math.h>
 static fz_context *ctx;
+static int unstable_char_resolve_strategy;
 
 static fz_matrix out_matrix;
 static fz_point out_point;
@@ -74,7 +75,7 @@ wasm_rethrow(fz_context *ctx)
 
 static fz_font *load_wasm_font_file(const char *name, const char *script)
 {
-	fz_buffer *mem = EM_ASM_PTR({ return globalThis.$libmupdf_load_font_file($0, $1) }, name, script);
+	fz_buffer *mem = EM_ASM_PTR({ return Module.$libmupdf_load_font_file($0, $1) }, name, script);
 	if (mem)
 		return fz_new_font_from_buffer(ctx, name, mem, 0, 0);
 	return NULL;
@@ -319,6 +320,26 @@ EXPORT
 void wasm_set_user_css(char *text)
 {
 	VOID(fz_set_user_css, text)
+}
+
+EXPORT
+void wasm_char_unstable_resolve_strategy(boolean enabled)
+{
+	unstable_char_resolve_strategy = enabled;
+}
+
+int wasm_char_unstable_resolve_strategy_enabled(void)
+{
+	return unstable_char_resolve_strategy;
+}
+
+EXPORT
+void wasm_drop_cache(void)
+{
+	TRY({
+		fz_empty_store(ctx);
+		fz_purge_glyph_cache(ctx);
+	})
 }
 
 // --- REFERENCE COUNTING ---
@@ -2540,7 +2561,7 @@ static void js_stm_drop(fz_context *ctx, void *state_)
 {
 	struct js_stm_state *state = state_;
 	EM_ASM({
-		globalThis.$libmupdf_stm_close($0);
+		Module.$libmupdf_stm_close($0);
 	}, state->id);
 	fz_free(ctx, state);
 }
@@ -2550,7 +2571,7 @@ static int js_stm_next(fz_context *ctx, fz_stream *stm, size_t len)
 	struct js_stm_state *state = stm->state;
 	int n = EM_ASM_INT(
 		{
-			return globalThis.$libmupdf_stm_read($0, $1, $2, $3);
+			return Module.$libmupdf_stm_read($0, $1, $2, $3);
 		},
 		(int) state->id,
 		(int) stm->pos,
@@ -2574,7 +2595,7 @@ static void js_stm_seek(fz_context *ctx, fz_stream *stm, int64_t offset, int whe
 	struct js_stm_state *state = stm->state;
 	int n = EM_ASM_INT(
 		{
-			return globalThis.$libmupdf_stm_seek($0, $1, $2, $3);
+			return Module.$libmupdf_stm_seek($0, $1, $2, $3);
 		},
 		(int) state->id,
 		(int) stm->pos,
@@ -2605,25 +2626,25 @@ fz_stream *wasm_new_stream(int id)
 static void
 path_walk_moveto(fz_context *ctx, void *arg, float x, float y)
 {
-	EM_ASM({ globalThis.$libmupdf_path_walk.moveto($0, $1, $2) }, (int)arg, x, y);
+	EM_ASM({ Module.$libmupdf_path_walk.moveto($0, $1, $2) }, (int)arg, x, y);
 }
 
 static void
 path_walk_lineto(fz_context *ctx, void *arg, float x, float y)
 {
-	EM_ASM({ globalThis.$libmupdf_path_walk.lineto($0, $1, $2) }, (int)arg, x, y);
+	EM_ASM({ Module.$libmupdf_path_walk.lineto($0, $1, $2) }, (int)arg, x, y);
 }
 
 static void
 path_walk_curveto(fz_context *ctx, void *arg, float x1, float y1, float x2, float y2, float x3, float y3)
 {
-	EM_ASM({ globalThis.$libmupdf_path_walk.curveto($0, $1, $2, $3, $4, $5, $6) }, (int)arg, x1, y1, x2, y2, x3, y3);
+	EM_ASM({ Module.$libmupdf_path_walk.curveto($0, $1, $2, $3, $4, $5, $6) }, (int)arg, x1, y1, x2, y2, x3, y3);
 }
 
 static void
 path_walk_closepath(fz_context *ctx, void *arg)
 {
-	EM_ASM({ globalThis.$libmupdf_path_walk.closepath($0) }, (int)arg);
+	EM_ASM({ Module.$libmupdf_path_walk.closepath($0) }, (int)arg);
 }
 
 EXPORT
@@ -2652,7 +2673,7 @@ void wasm_walk_text(fz_text *text, int walk_id)
 
 	for (span = text->head; span; span = span->next) {
 		trm = span->trm;
-		EM_ASM({ globalThis.$libmupdf_text_walk.begin_span($0, $1, $2, $3, $4, $5, $6) },
+		EM_ASM({ Module.$libmupdf_text_walk.begin_span($0, $1, $2, $3, $4, $5, $6) },
 			walk_id,
 			span->font,
 			&trm,
@@ -2664,7 +2685,7 @@ void wasm_walk_text(fz_text *text, int walk_id)
 		for (i = 0; i < span->len; ++i) {
 			trm.e = span->items[i].x;
 			trm.f = span->items[i].y;
-			EM_ASM({ globalThis.$libmupdf_text_walk.show_glyph($0, $1, $2, $3, $4, $5, $6, $7) },
+			EM_ASM({ Module.$libmupdf_text_walk.show_glyph($0, $1, $2, $3, $4, $5, $6, $7) },
 				walk_id,
 				span->font,
 				&trm,
@@ -2675,7 +2696,7 @@ void wasm_walk_text(fz_text *text, int walk_id)
 				span->markup_dir
 			);
 		}
-		EM_ASM({ globalThis.$libmupdf_text_walk.end_span($0) }, walk_id);
+		EM_ASM({ Module.$libmupdf_text_walk.end_span($0) }, walk_id);
 	}
 }
 
@@ -2690,20 +2711,20 @@ typedef struct
 static void
 js_dev_drop_device(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.drop_device($0) }, ((js_device*)dev)->id);
+	EM_ASM({ Module.$libmupdf_device.drop_device($0) }, ((js_device*)dev)->id);
 }
 
 static void
 js_dev_close_device(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.close_device($0) }, ((js_device*)dev)->id);
+	EM_ASM({ Module.$libmupdf_device.close_device($0) }, ((js_device*)dev)->id);
 }
 
 static void
 js_dev_fill_path(fz_context *ctx, fz_device *dev, const fz_path *path, int even_odd, fz_matrix ctm,
 	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.fill_path($0, $1, $2, $3, $4, $5, $6, $7) },
+	EM_ASM({ Module.$libmupdf_device.fill_path($0, $1, $2, $3, $4, $5, $6, $7) },
 		((js_device*)dev)->id,
 		path,
 		even_odd,
@@ -2719,7 +2740,7 @@ static void
 js_dev_clip_path(fz_context *ctx, fz_device *dev, const fz_path *path, int even_odd, fz_matrix ctm,
 	fz_rect scissor)
 {
-	EM_ASM({ globalThis.$libmupdf_device.clip_path($0, $1, $2, $3) },
+	EM_ASM({ Module.$libmupdf_device.clip_path($0, $1, $2, $3) },
 		((js_device*)dev)->id,
 		path,
 		even_odd,
@@ -2732,7 +2753,7 @@ js_dev_stroke_path(fz_context *ctx, fz_device *dev, const fz_path *path,
 	const fz_stroke_state *stroke, fz_matrix ctm,
 	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.stroke_path($0, $1, $2, $3, $4, $5, $6, $7) },
+	EM_ASM({ Module.$libmupdf_device.stroke_path($0, $1, $2, $3, $4, $5, $6, $7) },
 		((js_device*)dev)->id,
 		path,
 		stroke,
@@ -2748,7 +2769,7 @@ static void
 js_dev_clip_stroke_path(fz_context *ctx, fz_device *dev, const fz_path *path, const fz_stroke_state *stroke,
 	fz_matrix ctm, fz_rect scissor)
 {
-	EM_ASM({ globalThis.$libmupdf_device.clip_stroke_path($0, $1, $2, $3) },
+	EM_ASM({ Module.$libmupdf_device.clip_stroke_path($0, $1, $2, $3) },
 		((js_device*)dev)->id,
 		path,
 		stroke,
@@ -2760,7 +2781,7 @@ static void
 js_dev_fill_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm,
 	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.fill_text($0, $1, $2, $3, $4, $5, $6) },
+	EM_ASM({ Module.$libmupdf_device.fill_text($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		text,
 		&ctm,
@@ -2775,7 +2796,7 @@ static void
 js_dev_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, const fz_stroke_state *stroke,
 	fz_matrix ctm, fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.stroke_text($0, $1, $2, $3, $4, $5, $6, $7) },
+	EM_ASM({ Module.$libmupdf_device.stroke_text($0, $1, $2, $3, $4, $5, $6, $7) },
 		((js_device*)dev)->id,
 		text,
 		stroke,
@@ -2790,7 +2811,7 @@ js_dev_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, const f
 static void
 js_dev_clip_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm, fz_rect scissor)
 {
-	EM_ASM({ globalThis.$libmupdf_device.clip_text($0, $1, $2) },
+	EM_ASM({ Module.$libmupdf_device.clip_text($0, $1, $2) },
 		((js_device*)dev)->id,
 		text,
 		&ctm
@@ -2801,7 +2822,7 @@ static void
 js_dev_clip_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, const fz_stroke_state *stroke,
 	fz_matrix ctm, fz_rect scissor)
 {
-	EM_ASM({ globalThis.$libmupdf_device.clip_stroke_text($0, $1, $2, $3) },
+	EM_ASM({ Module.$libmupdf_device.clip_stroke_text($0, $1, $2, $3) },
 		((js_device*)dev)->id,
 		text,
 		stroke,
@@ -2812,7 +2833,7 @@ js_dev_clip_stroke_text(fz_context *ctx, fz_device *dev, const fz_text *text, co
 static void
 js_dev_ignore_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix ctm)
 {
-	EM_ASM({ globalThis.$libmupdf_device.ignore_text($0, $1, $2) },
+	EM_ASM({ Module.$libmupdf_device.ignore_text($0, $1, $2) },
 		((js_device*)dev)->id,
 		text,
 		&ctm
@@ -2822,7 +2843,7 @@ js_dev_ignore_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matr
 static void
 js_dev_fill_shade(fz_context *ctx, fz_device *dev, fz_shade *shade, fz_matrix ctm, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.fill_shade($0, $1, $2, $3) },
+	EM_ASM({ Module.$libmupdf_device.fill_shade($0, $1, $2, $3) },
 		((js_device*)dev)->id,
 		shade,
 		&ctm,
@@ -2833,7 +2854,7 @@ js_dev_fill_shade(fz_context *ctx, fz_device *dev, fz_shade *shade, fz_matrix ct
 static void
 js_dev_fill_image(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.fill_image($0, $1, $2, $3) },
+	EM_ASM({ Module.$libmupdf_device.fill_image($0, $1, $2, $3) },
 		((js_device*)dev)->id,
 		image,
 		&ctm,
@@ -2845,7 +2866,7 @@ static void
 js_dev_fill_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm,
 	fz_colorspace *colorspace, const float *color, float alpha, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.fill_image_mask($0, $1, $2, $3, $4, $5, $6) },
+	EM_ASM({ Module.$libmupdf_device.fill_image_mask($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		image,
 		&ctm,
@@ -2859,7 +2880,7 @@ js_dev_fill_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matr
 static void
 js_dev_clip_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matrix ctm, fz_rect scissor)
 {
-	EM_ASM({ globalThis.$libmupdf_device.clip_image_mask($0, $1, $2) },
+	EM_ASM({ Module.$libmupdf_device.clip_image_mask($0, $1, $2) },
 		((js_device*)dev)->id,
 		image,
 		&ctm
@@ -2869,7 +2890,7 @@ js_dev_clip_image_mask(fz_context *ctx, fz_device *dev, fz_image *image, fz_matr
 static void
 js_dev_pop_clip(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.pop_clip($0) },
+	EM_ASM({ Module.$libmupdf_device.pop_clip($0) },
 		((js_device*)dev)->id
 	);
 }
@@ -2878,7 +2899,7 @@ static void
 js_dev_begin_mask(fz_context *ctx, fz_device *dev, fz_rect bbox, int luminosity,
 	fz_colorspace *colorspace, const float *color, fz_color_params color_params)
 {
-	EM_ASM({ globalThis.$libmupdf_device.begin_mask($0, $1, $2, $3, $4, $5) },
+	EM_ASM({ Module.$libmupdf_device.begin_mask($0, $1, $2, $3, $4, $5) },
 		((js_device*)dev)->id,
 		&bbox,
 		luminosity,
@@ -2891,7 +2912,7 @@ js_dev_begin_mask(fz_context *ctx, fz_device *dev, fz_rect bbox, int luminosity,
 static void
 js_dev_end_mask(fz_context *ctx, fz_device *dev, fz_function *tr)
 {
-	EM_ASM({ globalThis.$libmupdf_device.end_mask($0, $1) },
+	EM_ASM({ Module.$libmupdf_device.end_mask($0, $1) },
 		((js_device*)dev)->id,
 		tr
 	);
@@ -2901,7 +2922,7 @@ static void
 js_dev_begin_group(fz_context *ctx, fz_device *dev, fz_rect bbox,
 	fz_colorspace *colorspace, int isolated, int knockout, int blendmode, float alpha)
 {
-	EM_ASM({ globalThis.$libmupdf_device.begin_group($0, $1, $2, $3, $4, $5, $6) },
+	EM_ASM({ Module.$libmupdf_device.begin_group($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		&bbox,
 		colorspace,
@@ -2915,7 +2936,7 @@ js_dev_begin_group(fz_context *ctx, fz_device *dev, fz_rect bbox,
 static void
 js_dev_end_group(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.end_group($0) },
+	EM_ASM({ Module.$libmupdf_device.end_group($0) },
 		((js_device*)dev)->id
 	);
 }
@@ -2924,7 +2945,7 @@ static int
 js_dev_begin_tile(fz_context *ctx, fz_device *dev, fz_rect area, fz_rect view,
 	float xstep, float ystep, fz_matrix ctm, int id)
 {
-	return EM_ASM_INT({ return globalThis.$libmupdf_device.begin_tile($0, $1, $2, $3, $4, $5, $6) },
+	return EM_ASM_INT({ return Module.$libmupdf_device.begin_tile($0, $1, $2, $3, $4, $5, $6) },
 		((js_device*)dev)->id,
 		&area,
 		&view,
@@ -2938,7 +2959,7 @@ js_dev_begin_tile(fz_context *ctx, fz_device *dev, fz_rect area, fz_rect view,
 static void
 js_dev_end_tile(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.end_tile($0) },
+	EM_ASM({ Module.$libmupdf_device.end_tile($0) },
 		((js_device*)dev)->id
 	);
 }
@@ -2946,7 +2967,7 @@ js_dev_end_tile(fz_context *ctx, fz_device *dev)
 static void
 js_dev_begin_layer(fz_context *ctx, fz_device *dev, const char *name)
 {
-	EM_ASM({ globalThis.$libmupdf_device.begin_layer($0, $1) },
+	EM_ASM({ Module.$libmupdf_device.begin_layer($0, $1) },
 		((js_device*)dev)->id,
 		name
 	);
@@ -2955,7 +2976,7 @@ js_dev_begin_layer(fz_context *ctx, fz_device *dev, const char *name)
 static void
 js_dev_end_layer(fz_context *ctx, fz_device *dev)
 {
-	EM_ASM({ globalThis.$libmupdf_device.end_layer($0) },
+	EM_ASM({ Module.$libmupdf_device.end_layer($0) },
 		((js_device*)dev)->id
 	);
 }

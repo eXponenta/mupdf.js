@@ -75,3 +75,46 @@ The main source files are:
 
 - `src/mupdf.c`
 - `src/mupdf.ts`
+
+## Runtime lifecycle
+
+Importing `mupdf` no longer initializes WebAssembly. Call `init()` explicitly
+before using classes or engine functions. This is a breaking change for callers
+that relied on initialization during import.
+
+```js
+import * as mupdf from "mupdf"
+
+await mupdf.init({
+    locateFile: name => `/assets/viewer-pdf/${name}`,
+})
+const doc = mupdf.Document.openDocument(pdfBytes, "application/pdf")
+// Use the document, pages and pixmaps.
+doc.destroy()
+mupdf.destroy()
+
+// A subsequent init creates a fresh runtime.
+await mupdf.init()
+```
+
+Pass Emscripten options directly to `init()` instead of setting
+`globalThis.$libmupdf_wasm_Module`. Concurrent calls share one initialization.
+The module owns one runtime; `destroy()` is idempotent and rejects calls while
+initialization is pending. It invalidates all existing MuPDF objects and closes
+open stream handles. Create new objects after reinitializing.
+
+`destroy()` releases the runtime references, callback tables and font loader.
+The JavaScript garbage collector determines when memory is reclaimed. External
+references to borrowed heap views or a Module captured through custom Emscripten
+hooks can keep WASM memory alive; release those references as well.
+
+Rebuild with the existing Emscripten installation:
+
+```sh
+EMSDK_DIR=/Users/exponenta/projects/emsdk bash build.sh
+node --expose-gc tests/runtime-lifecycle.mjs
+```
+
+The lifecycle test checks lazy import, initialization failure/retry, concurrent
+initialization, C-to-JS callbacks, PDF rendering, stream cleanup, repeated teardown,
+stale objects after reinitialization and garbage collection of WASM memory.

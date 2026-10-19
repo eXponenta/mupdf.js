@@ -25,17 +25,60 @@
 import { Pointer } from "./mupdf-wasm.js"
 import libmupdf_wasm from "./mupdf-wasm.js"
 
-declare global {
-	var $libmupdf_wasm_Module: any
-}
-
 var node_fs: any = null
 if (typeof process !== "undefined" && process.versions && process.versions.node)
 	node_fs = await import("node:fs")
 
-const libmupdf = await libmupdf_wasm(globalThis["$libmupdf_wasm_Module"])
+let libmupdf: Awaited<ReturnType<typeof libmupdf_wasm>>
+let initializing: Promise<void> | undefined
+let generation = 0
+const callbacks: Record<string, any> = {}
+const deviceSpaces = new Map<string, ColorSpace>()
+let nullPDFObject: PDFObject | undefined
 
-libmupdf._wasm_init_context()
+/** Initialize a fresh runtime. Importing this module does not allocate WASM memory. */
+export function init(options: Record<string, any> = {}): Promise<void> {
+	if (initializing) return initializing
+	if (libmupdf) return Promise.resolve()
+	initializing = (async () => {
+		const runtime = await libmupdf_wasm({ ...options, ...callbacks })
+		libmupdf = runtime
+		try {
+			libmupdf._wasm_init_context()
+			_wasm_int = Malloc<"int">(4)
+			_wasm_point = Malloc<"fz_point">(4 * 6) >> 2
+			_wasm_rect = Malloc<"fz_rect">(4 * 8) >> 2
+			_wasm_matrix = Malloc<"fz_matrix">(4 * 6) >> 2
+			_wasm_color = Malloc<"number">(4 * 4) >> 2
+			_wasm_quad = Malloc<"fz_quad">(4 * 8) >> 2
+		} catch (error) {
+			libmupdf = undefined as any
+			throw error
+		}
+	})().finally(() => { initializing = undefined })
+	return initializing
+}
+
+/** Invalidate all objects and release this module's references to the WASM runtime. */
+export function destroy(): void {
+	if (initializing) throw new Error("MuPDF initialization is still pending")
+	if (!libmupdf) return
+	++generation
+	libmupdf = undefined as any
+	deviceSpaces.clear()
+	nullPDFObject = undefined
+	_wasm_string.fill(0 as Pointer<"char">)
+	$libmupdf_device_table.clear()
+	$libmupdf_path_table.clear()
+	$libmupdf_text_table.clear()
+	activeFontContext = null
+	$libmupdf_load_font_file_js = undefined as any
+	const handles = [...$libmupdf_stm_table.values()]
+	$libmupdf_stm_table.clear()
+	for (const handle of handles) {
+		try { handle.close() } catch (error) { console.error("MuPDF stream close failed", error) }
+	}
+}
 
 function Malloc<T>(size: number) {
 	return libmupdf._wasm_malloc(size) as unknown as Pointer<T>
@@ -104,6 +147,25 @@ export type Point = [number, number]
 export type Color = [number] | [number, number, number] | [number, number, number, number]
 
 export type Rotate = 0 | 90 | 180 | 270
+
+export type FontResolveMode = "default" | "unstable"
+
+export interface RequiredFont {
+	name: string,
+	script: string,
+}
+
+export interface RequiredFontOptions {
+	pages?: Iterable<number>,
+	showExtras?: boolean,
+}
+
+export interface DocumentFontData {
+	name: string,
+	script?: string,
+	data: Buffer | ArrayBuffer | Uint8Array,
+	resolveMode?: FontResolveMode,
+}
 
 export const Matrix = {
 	identity: [ 1, 0, 0, 1, 0, 0 ] as Matrix,
@@ -226,6 +288,50 @@ export function installLoadFontFunction(f: (name: string, script: string) => Buf
 	$libmupdf_load_font_file_js = f
 }
 
+type DocumentFontEntry = {
+	data: Buffer,
+	resolveMode: FontResolveMode,
+}
+
+type ActiveFontContext = {
+	doc: Document,
+	requests?: Map<string, RequiredFont>,
+}
+
+let activeFontContext: ActiveFontContext | null = null
+
+function fontKey(name: string, script: string) {
+	return script + "\0" + name
+}
+
+function checkFontResolveMode(mode: FontResolveMode) {
+	if (mode !== "default" && mode !== "unstable")
+		throw new Error("invalid font resolve mode: " + mode)
+}
+
+function isUnstableResolveMode(mode: FontResolveMode) {
+	return mode === "unstable"
+}
+
+function setCharUnstableResolveStrategy(enabled: boolean) {
+	libmupdf._wasm_char_unstable_resolve_strategy(enabled)
+}
+
+function withDocumentFontContext<T>(doc: Document, run: () => T, requests?: Map<string, RequiredFont>) {
+	let prev = activeFontContext
+	let nextRequests = requests || (prev && prev.doc === doc ? prev.requests : undefined)
+	activeFontContext = { doc }
+	if (nextRequests)
+		activeFontContext.requests = nextRequests
+	try {
+		return run()
+	} finally {
+		activeFontContext = prev
+		if (!prev)
+			setCharUnstableResolveStrategy(false)
+	}
+}
+
 export function setGraphicsMinLineWidth(min: number) {
 	min = isFinite(min) ? min : 0;
 	min = min < 0 ? 0 : min;
@@ -267,12 +373,12 @@ export function setAALevel(level: number = 8) {
 /* -------------------------------------------------------------------------- */
 
 // To pass Rect and Matrix as pointer arguments
-const _wasm_int = Malloc<"int">(4)
-const _wasm_point = Malloc<"fz_point">(4 * 6) >> 2
-const _wasm_rect = Malloc<"fz_rect">(4 * 8) >> 2
-const _wasm_matrix = Malloc<"fz_matrix">(4 * 6) >> 2
-const _wasm_color = Malloc<"number">(4 * 4) >> 2
-const _wasm_quad = Malloc<"fz_quad">(4 * 8) >> 2
+let _wasm_int = 0 as Pointer<"int">
+let _wasm_point = 0 as number
+let _wasm_rect = 0 as number
+let _wasm_matrix = 0 as number
+let _wasm_color = 0 as number
+let _wasm_quad = 0 as number
 const _wasm_string: [ Pointer<"char">, Pointer<"char"> ] = [ 0 as Pointer<"char">, 0 as Pointer<"char"> ]
 
 function checkType(value: any, type: any) {
@@ -611,11 +717,18 @@ function runSearch(searchFun: SearchFunction, searchThis: number, needle: string
 /* -------------------------------------------------------------------------- */
 
 abstract class Userdata<B> {
-	private static _finalizer: FinalizationRegistry<number>
+	private static _finalizer: FinalizationRegistry<{ pointer: number, generation: number }>
 
 	static readonly _drop: (pointer: any) => void
 
-	pointer: Pointer<B>
+	private _generation = generation
+	private _pointer: Pointer<B> = 0 as Pointer<B>
+	get pointer(): Pointer<B> {
+		if (!libmupdf || this._generation !== generation)
+			throw new Error("MuPDF object belongs to a destroyed runtime; call init() and create new objects")
+		return this._pointer
+	}
+	set pointer(value: Pointer<B>) { this._pointer = value }
 
 	constructor(pointer: Pointer<B>) {
 		if (typeof pointer !== "number")
@@ -623,13 +736,21 @@ abstract class Userdata<B> {
 		if (pointer !== 0) {
 			let ctor = this.constructor as typeof Userdata
 			if (!ctor._finalizer)
-				ctor._finalizer = new FinalizationRegistry(ctor._drop)
-			ctor._finalizer.register(this, pointer, this)
+				ctor._finalizer = new FinalizationRegistry(held => {
+					if (libmupdf && held.generation === generation) ctor._drop(held.pointer)
+				})
+			ctor._finalizer.register(this, { pointer, generation }, this)
 		}
 		this.pointer = pointer
 	}
 
 	destroy() {
+		if (!libmupdf || this._generation !== generation) {
+			const ctor = this.constructor as typeof Userdata
+			ctor._finalizer?.unregister(this)
+			this._pointer = 0 as Pointer<B>
+			return
+		}
 		if (this.pointer !== 0) {
 			let ctor = this.constructor as typeof Userdata
 			ctor._finalizer.unregister(this)
@@ -653,7 +774,7 @@ abstract class Userdata<B> {
 }
 
 export class Buffer extends Userdata<"fz_buffer"> {
-	static override readonly _drop = libmupdf._wasm_drop_buffer
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_buffer(pointer)
 
 	/** New empty Buffer. */
 	constructor()
@@ -748,7 +869,7 @@ export type ColorSpaceType =
 	"Separation"
 
 export class ColorSpace extends Userdata<"fz_colorspace"> {
-	static override readonly _drop = libmupdf._wasm_drop_colorspace
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_colorspace(pointer)
 
 	static readonly COLORSPACE_TYPES: ColorSpaceType[] = [
 		"None",
@@ -798,11 +919,20 @@ export class ColorSpace extends Userdata<"fz_colorspace"> {
 		return "[ColorSpace " + this.getName() + "]"
 	}
 
-	static readonly DeviceGray = new ColorSpace(libmupdf._wasm_device_gray())
-	static readonly DeviceRGB = new ColorSpace(libmupdf._wasm_device_rgb())
-	static readonly DeviceBGR = new ColorSpace(libmupdf._wasm_device_bgr())
-	static readonly DeviceCMYK = new ColorSpace(libmupdf._wasm_device_cmyk())
-	static readonly Lab = new ColorSpace(libmupdf._wasm_device_lab())
+	private static _deviceSpace(name: "_wasm_device_gray" | "_wasm_device_rgb" | "_wasm_device_bgr" | "_wasm_device_cmyk" | "_wasm_device_lab"): ColorSpace {
+		if (!libmupdf) throw new Error("MuPDF runtime is not initialized; call init() first")
+		let space = deviceSpaces.get(name)
+		if (!space) {
+			space = new ColorSpace(libmupdf[name]())
+			deviceSpaces.set(name, space)
+		}
+		return space
+	}
+	static get DeviceGray(): ColorSpace { return this._deviceSpace("_wasm_device_gray") }
+	static get DeviceRGB(): ColorSpace { return this._deviceSpace("_wasm_device_rgb") }
+	static get DeviceBGR(): ColorSpace { return this._deviceSpace("_wasm_device_bgr") }
+	static get DeviceCMYK(): ColorSpace { return this._deviceSpace("_wasm_device_cmyk") }
+	static get Lab(): ColorSpace { return this._deviceSpace("_wasm_device_lab") }
 }
 
 export type FontSimpleEncoding = "Latin" | "Greek" | "Cyrillic"
@@ -823,7 +953,7 @@ export type FontCJKLanguage =
 	"ko"
 
 export class Font extends Userdata<"fz_font"> {
-	static override readonly _drop = libmupdf._wasm_drop_font
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_font(pointer)
 
 	static readonly SIMPLE_ENCODING: FontSimpleEncoding[] = [
 		"Latin",
@@ -913,7 +1043,7 @@ export class Font extends Userdata<"fz_font"> {
 }
 
 export class Image extends Userdata<"fz_image"> {
-	static override readonly _drop = libmupdf._wasm_drop_image
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_image(pointer)
 
 	constructor(pointer: Pointer<"fz_image">)
 	constructor(data: AnyBuffer)
@@ -986,7 +1116,7 @@ export type LineJoin = "Miter" | "Round" | "Bevel" | "MiterXPS"
 // TODO: convert StrokeState from plain JS object to match mutool run ffi_pushstroke/ffi_tostroke
 
 export class StrokeState extends Userdata<"fz_stroke_state"> {
-	static override readonly _drop = libmupdf._wasm_drop_stroke_state
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_stroke_state(pointer)
 
 	static readonly LINE_CAP: LineCap[] = [
 		"Butt",
@@ -1056,7 +1186,7 @@ interface PathWalker {
 }
 
 export class Path extends Userdata<"fz_path"> {
-	static override readonly _drop = libmupdf._wasm_drop_path
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_path(pointer)
 
 	constructor(pointer?: Pointer<"fz_path">) {
 		if (typeof pointer === "number")
@@ -1124,7 +1254,7 @@ interface TextWalker {
 }
 
 export class Text extends Userdata<"fz_text"> {
-	static override readonly _drop = libmupdf._wasm_drop_text
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_text(pointer)
 
 	constructor(pointer?: Pointer<"fz_text">) {
 		if (typeof pointer === "number")
@@ -1179,7 +1309,7 @@ export class Text extends Userdata<"fz_text"> {
 }
 
 export class DisplayList extends Userdata<"fz_display_list"> {
-	static override readonly _drop = libmupdf._wasm_drop_display_list
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_display_list(pointer)
 
 	constructor(pointer: Pointer<"fz_display_list">)
 	constructor(mediabox: Rect)
@@ -1231,7 +1361,7 @@ export class DisplayList extends Userdata<"fz_display_list"> {
 }
 
 export class Pixmap extends Userdata<"fz_pixmap"> {
-	static override readonly _drop = libmupdf._wasm_drop_pixmap
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_pixmap(pointer)
 
 	constructor(pointer: Pointer<"fz_pixmap">)
 	constructor(colorspace: ColorSpace, bbox: Rect, alpha: boolean)
@@ -1390,7 +1520,7 @@ export class Pixmap extends Userdata<"fz_pixmap"> {
 }
 
 export class Shade extends Userdata<"fz_shade"> {
-	static override readonly _drop = libmupdf._wasm_drop_shade
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_shade(pointer)
 	getBounds() {
 		return fromRect(libmupdf._wasm_bound_shade(this.pointer))
 	}
@@ -1408,7 +1538,7 @@ interface StructuredTextWalker {
 type SelectMode = "chars" | "words" | "lines"
 
 export class StructuredText extends Userdata<"fz_stext_page"> {
-	static override readonly _drop = libmupdf._wasm_drop_stext_page
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_stext_page(pointer)
 
 	static readonly SELECT_MODE: SelectMode[] = [
 		"chars",
@@ -1534,7 +1664,7 @@ export type BlendMode =
 	"Luminosity"
 
 export class Device extends Userdata<"fz_device"> {
-	static override readonly _drop = libmupdf._wasm_drop_device
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_device(pointer)
 
 	static readonly BLEND_MODES: BlendMode[] = [
 		"Normal",
@@ -1742,7 +1872,7 @@ export class DisplayListDevice extends Device {
 }
 
 export class DocumentWriter extends Userdata<"fz_document_writer"> {
-	static override readonly _drop = libmupdf._wasm_drop_document_writer
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_document_writer(pointer)
 
 	constructor(buffer: Buffer, format: string, options: string) {
 		super(
@@ -1779,7 +1909,7 @@ export type DocumentPermission =
 	"print-hq"
 
 export class Document extends Userdata<"any_document"> {
-	static override readonly _drop = libmupdf._wasm_drop_document
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_document(pointer)
 
 	static readonly META_FORMAT = "format"
 	static readonly META_ENCRYPTION = "encryption"
@@ -1814,6 +1944,13 @@ export class Document extends Userdata<"any_document"> {
 		"XYZ",
 	]
 
+	_fontData: Map<string, DocumentFontEntry>
+
+	constructor(pointer: Pointer<"any_document">) {
+		super(pointer)
+		this._fontData = new Map()
+	}
+
 	static openDocument(from: Buffer | ArrayBuffer | Uint8Array | Stream | string, magic?: string): Document {
 		let pointer = 0 as Pointer<"any_document">
 
@@ -1844,6 +1981,56 @@ export class Document extends Userdata<"any_document"> {
 			return new PDFDocument(pdf)
 
 		return new Document(pointer)
+	}
+
+	dropCache() {
+		libmupdf._wasm_drop_cache()
+	}
+
+	queryRequiredFonts(options: RequiredFontOptions = {}) {
+		let requests = new Map<string, RequiredFont>()
+		let pageIndexes = options.pages ? Array.from(options.pages) :
+			Array.from({ length: this.countPages() }, (_value, index) => index)
+		let showExtras = options.showExtras === true
+
+		withDocumentFontContext(this, () => {
+			for (let index of pageIndexes) {
+				let page = this.loadPage(index)
+				try {
+					let list = page.toDisplayList(showExtras)
+					list.destroy()
+				} finally {
+					page.destroy()
+				}
+			}
+		}, requests)
+
+		this.dropCache()
+		return Array.from(requests.values())
+	}
+
+	setFontData(fonts: Iterable<DocumentFontData>, resolveMode: FontResolveMode = "default") {
+		checkFontResolveMode(resolveMode)
+
+		for (let font of fonts) {
+			checkType(font.name, "string")
+			if (typeof font.script !== "undefined")
+				checkType(font.script, "string")
+			if (typeof font.resolveMode !== "undefined")
+				checkFontResolveMode(font.resolveMode)
+
+			let script = font.script || "undefined"
+			this._fontData.set(fontKey(font.name, script), {
+				data: font.data instanceof Buffer ? font.data : new Buffer(font.data),
+				resolveMode: font.resolveMode || resolveMode,
+			})
+		}
+
+		this.dropCache()
+	}
+
+	_findFontData(name: string, script: string) {
+		return this._fontData.get(fontKey(name, script)) || this._fontData.get(fontKey(name, "undefined"))
 	}
 
 	formatLinkURI(dest: LinkDest) {
@@ -1984,7 +2171,7 @@ interface OutlineItem {
 }
 
 export class OutlineIterator extends Userdata<"fz_outline_iterator"> {
-	static override readonly _drop = libmupdf._wasm_drop_outline_iterator
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_outline_iterator(pointer)
 
 	static readonly RESULT_DID_NOT_MOVE = -1
 	static readonly RESULT_AT_ITEM = 0
@@ -2056,7 +2243,7 @@ interface LinkDest {
 }
 
 export class Link extends Userdata<"fz_link"> {
-	static override readonly _drop = libmupdf._wasm_drop_link
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_link(pointer)
 
 	getBounds() {
 		return fromRect(libmupdf._wasm_link_get_rect(this.pointer))
@@ -2084,7 +2271,7 @@ export class Link extends Userdata<"fz_link"> {
 export type PageBox = "MediaBox" | "CropBox" | "BleedBox" | "TrimBox" | "ArtBox"
 
 export class Page extends Userdata<"any_page"> {
-	static override readonly _drop = libmupdf._wasm_drop_page
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_page(pointer)
 
 	static readonly BOXES: PageBox[] = [
 		"MediaBox",
@@ -2737,26 +2924,48 @@ export class PDFPage extends Page {
 		libmupdf._wasm_pdf_set_page_box(this.pointer, box_ix, RECT(rect))
 	}
 
+	override run(device: Device, matrix: Matrix) {
+		return withDocumentFontContext(this._doc, () => super.run(device, matrix))
+	}
+
+	override runPageContents(device: Device, matrix: Matrix) {
+		return withDocumentFontContext(this._doc, () => super.runPageContents(device, matrix))
+	}
+
+	override runPageAnnots(device: Device, matrix: Matrix) {
+		return withDocumentFontContext(this._doc, () => super.runPageAnnots(device, matrix))
+	}
+
+	override runPageWidgets(device: Device, matrix: Matrix) {
+		return withDocumentFontContext(this._doc, () => super.runPageWidgets(device, matrix))
+	}
+
+	override toDisplayList(showExtras = true) {
+		return withDocumentFontContext(this._doc, () => super.toDisplayList(showExtras))
+	}
+
 	override toPixmap(matrix: Matrix, colorspace: ColorSpace, alpha = false, showExtras = true, usage = "View", box: PageBox = "CropBox") {
-		checkMatrix(matrix)
-		checkType(colorspace, ColorSpace)
-		let box_ix = ENUM<PageBox>(box, Page.BOXES)
-		let result
-		if (showExtras)
-			result = libmupdf._wasm_pdf_new_pixmap_from_page_with_usage(this.pointer,
-				MATRIX(matrix),
-				colorspace.pointer,
-				alpha,
-				STRING(usage),
-				box_ix)
-		else
-			result = libmupdf._wasm_pdf_new_pixmap_from_page_contents_with_usage(this.pointer,
-				MATRIX(matrix),
-				colorspace.pointer,
-				alpha,
-				STRING(usage),
-				box_ix)
-		return new Pixmap(result)
+		return withDocumentFontContext(this._doc, () => {
+			checkMatrix(matrix)
+			checkType(colorspace, ColorSpace)
+			let box_ix = ENUM<PageBox>(box, Page.BOXES)
+			let result
+			if (showExtras)
+				result = libmupdf._wasm_pdf_new_pixmap_from_page_with_usage(this.pointer,
+					MATRIX(matrix),
+					colorspace.pointer,
+					alpha,
+					STRING(usage),
+					box_ix)
+			else
+				result = libmupdf._wasm_pdf_new_pixmap_from_page_contents_with_usage(this.pointer,
+					MATRIX(matrix),
+					colorspace.pointer,
+					alpha,
+					STRING(usage),
+					box_ix)
+			return new Pixmap(result)
+		})
 	}
 
 	getWidgets() {
@@ -2825,9 +3034,12 @@ export class PDFPage extends Page {
 type PDFObjectPath = Array<number | string | PDFObject>
 
 export class PDFObject extends Userdata<"pdf_obj"> {
-	static override readonly _drop = libmupdf._wasm_pdf_drop_obj
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_pdf_drop_obj(pointer)
 
-	static readonly Null = new PDFObject(null as unknown as PDFDocument, 0 as Pointer<"pdf_obj">)
+	static get Null(): PDFObject {
+		if (!libmupdf) throw new Error("MuPDF runtime is not initialized; call init() first")
+		return nullPDFObject ||= new PDFObject(null as unknown as PDFDocument, 0 as Pointer<"pdf_obj">)
+	}
 
 	_doc: PDFDocument
 
@@ -3008,7 +3220,7 @@ export class PDFObject extends Userdata<"pdf_obj"> {
 }
 
 export class PDFGraftMap extends Userdata<"pdf_graft_map"> {
-	static override readonly _drop = libmupdf._wasm_pdf_drop_graft_map
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_pdf_drop_graft_map(pointer)
 
 	_doc: PDFDocument
 
@@ -3090,7 +3302,7 @@ export type PDFAnnotationIntent =
 	"StampSnapshot"
 
 export class PDFAnnotation extends Userdata<"pdf_annot"> {
-	static override readonly _drop = libmupdf._wasm_pdf_drop_annot
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_pdf_drop_annot(pointer)
 
 	_doc: PDFDocument
 
@@ -3876,12 +4088,6 @@ export class PDFWidget extends PDFAnnotation {
 
 /* We need a certain level of ugliness to allow callbacks from C to JS */
 
-declare global {
-	function $libmupdf_stm_close(ptr: number): void
-	function $libmupdf_stm_seek(ptr: number, pos: number, offset: number, whence: number): number
-	function $libmupdf_stm_read(ptr: number, pos: number, addr: number, size: number): number
-}
-
 interface StreamHandle {
 	fileSize(): number,
 	read(memory: Uint8Array, offset: number, length: number, position: number): number,
@@ -3891,7 +4097,7 @@ interface StreamHandle {
 var $libmupdf_stm_id = 0
 var $libmupdf_stm_table: Map<number,StreamHandle> = new Map()
 
-globalThis.$libmupdf_stm_close = function (id: number) {
+callbacks["$libmupdf_stm_close"] = function (id: number) {
 	let handle = $libmupdf_stm_table.get(id)
 	if (handle) {
 		handle.close()
@@ -3901,7 +4107,7 @@ globalThis.$libmupdf_stm_close = function (id: number) {
 	throw new Error("invalid file handle")
 }
 
-globalThis.$libmupdf_stm_seek = function (id: number, pos: number, offset: number, whence: number) {
+callbacks["$libmupdf_stm_seek"] = function (id: number, pos: number, offset: number, whence: number) {
 	let handle = $libmupdf_stm_table.get(id)
 	if (handle) {
 		if (whence === 0)
@@ -3919,7 +4125,7 @@ globalThis.$libmupdf_stm_seek = function (id: number, pos: number, offset: numbe
 	throw new Error("invalid file handle")
 }
 
-globalThis.$libmupdf_stm_read = function (id: number, pos: number, addr: number, size: number) {
+callbacks["$libmupdf_stm_read"] = function (id: number, pos: number, addr: number, size: number) {
 	let handle = $libmupdf_stm_table.get(id)
 	if (handle) {
 		return handle.read(libmupdf.HEAPU8, addr, size, pos)
@@ -3928,7 +4134,7 @@ globalThis.$libmupdf_stm_read = function (id: number, pos: number, addr: number,
 }
 
 export class Stream extends Userdata<"fz_stream"> {
-	static override readonly _drop = libmupdf._wasm_drop_stream
+	static override readonly _drop = (pointer: any) => libmupdf._wasm_drop_stream(pointer)
 	constructor(handle: StreamHandle) {
 		let id = $libmupdf_stm_id++
 		$libmupdf_stm_table.set(id, handle)
@@ -3940,16 +4146,29 @@ export class Stream extends Userdata<"fz_stream"> {
 
 var $libmupdf_load_font_file_js: (name: string, script: string) => Buffer | null
 
-declare global {
-	function $libmupdf_load_font_file(name: Pointer<"char">, script: Pointer<"char">): Pointer<"fz_buffer">
-}
+callbacks["$libmupdf_load_font_file"] = function (name: Pointer<"char">, script: Pointer<"char">) {
+	let fontName = fromString(name)
+	let fontScript = fromString(script)
 
-globalThis.$libmupdf_load_font_file = function (name, script) {
+	if (activeFontContext) {
+		if (activeFontContext.requests)
+			activeFontContext.requests.set(fontKey(fontName, fontScript), { name: fontName, script: fontScript })
+
+		let font = activeFontContext.doc._findFontData(fontName, fontScript)
+		if (font) {
+			setCharUnstableResolveStrategy(isUnstableResolveMode(font.resolveMode))
+			return font.data.pointer
+		}
+	}
+
+	setCharUnstableResolveStrategy(false)
+
 	if ($libmupdf_load_font_file_js) {
-		var buf = $libmupdf_load_font_file_js(fromString(name), fromString(script))
+		var buf = $libmupdf_load_font_file_js(fontName, fontScript)
 		if (buf)
 			return buf.pointer
 	}
+
 	return 0 as Pointer<"fz_buffer">
 }
 
@@ -3998,13 +4217,7 @@ var $libmupdf_path_table: Map<number,PathWalker> = new Map()
 var $libmupdf_text_id = 0
 var $libmupdf_text_table: Map<number,TextWalker> = new Map()
 
-declare global {
-	var $libmupdf_path_walk: any
-	var $libmupdf_text_walk: any
-	var $libmupdf_device: any
-}
-
-globalThis.$libmupdf_path_walk = {
+callbacks["$libmupdf_path_walk"] = {
 	moveto(id: number, x: number, y: number): void {
 		$libmupdf_path_table.get(id)?.moveTo?.(x, y)
 	},
@@ -4021,7 +4234,7 @@ globalThis.$libmupdf_path_walk = {
 
 var $libmupdf_text_font: Font | null = null
 
-globalThis.$libmupdf_text_walk = {
+callbacks["$libmupdf_text_walk"] = {
 	begin_span(
 		id: number,
 		font: Pointer<"fz_font">,
@@ -4067,7 +4280,7 @@ globalThis.$libmupdf_text_walk = {
 	},
 }
 
-globalThis.$libmupdf_device = {
+callbacks["$libmupdf_device"] = {
 	drop_device(id: number): void {
 		$libmupdf_device_table.get(id)?.drop?.()
 		$libmupdf_device_table.delete(id)

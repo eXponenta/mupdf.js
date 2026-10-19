@@ -1,15 +1,36 @@
 #!/bin/bash
 
 MUPDF_DIR=libmupdf
-EMSDK_DIR=/opt/emsdk
+EMSDK_DIR=${EMSDK_DIR:-/opt/emsdk}
 
 MUPDF_OPTS="-Os -mno-nontrapping-fptoint -fwasm-exceptions -sSUPPORT_LONGJMP=wasm -DTOFU -DTOFU_CJK_EXT -DFZ_ENABLE_XPS=0 -DFZ_ENABLE_SVG=0 -DFZ_ENABLE_CBZ=0 -DFZ_ENABLE_IMG=0 -DFZ_ENABLE_HTML=0 -DFZ_ENABLE_EPUB=0 -DFZ_ENABLE_JS=0 -DFZ_ENABLE_OCR_OUTPUT=0 -DFZ_ENABLE_DOCX_OUTPUT=0 -DFZ_ENABLE_ODT_OUTPUT=0 -DMEMENTO_STACKTRACE_METHOD=0"
+
+MUPDF_PATCH=patches/libmupdf-font-resolve.patch
 
 export EMSDK_QUIET=1
 source $EMSDK_DIR/emsdk_env.sh
 echo
 
 BUILD=${1:-release}
+
+if [ -f "$MUPDF_PATCH" ]; then
+	if git -C "$MUPDF_DIR" apply --reverse --check "../$MUPDF_PATCH" >/dev/null 2>&1; then
+		echo MUPDF PATCH ALREADY APPLIED
+	else
+		echo APPLYING MUPDF PATCH
+		git -C "$MUPDF_DIR" apply --check "../$MUPDF_PATCH" || exit 1
+		git -C "$MUPDF_DIR" apply "../$MUPDF_PATCH" || exit 1
+		MUPDF_PATCH_APPLIED=1
+	fi
+	echo
+fi
+
+cleanup_mupdf_patch() {
+	if [ "$MUPDF_PATCH_APPLIED" = 1 ]; then
+		git -C "$MUPDF_DIR" apply --reverse "../$MUPDF_PATCH"
+	fi
+}
+trap cleanup_mupdf_patch EXIT
 
 echo BUILDING MUPDF CORE
 make -j4 -C $MUPDF_DIR build=$BUILD OS=wasm XCFLAGS="$MUPDF_OPTS" libs
